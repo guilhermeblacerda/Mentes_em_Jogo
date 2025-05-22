@@ -3,14 +3,14 @@
 #include <LiquidCrystal_I2C.h>
 
 #define NUM_LEDS 48
-#define PIN 13
+#define PIN 11
 #define DEBOUNCE_DELAY 50 // Debounce delay in milliseconds
 #define LED_BRIGHTNESS 50 // Reduced brightness for sensory-friendly display
 
 Adafruit_NeoPixel YagamyLight = Adafruit_NeoPixel(NUM_LEDS, PIN, NEO_RGB + NEO_KHZ800);
-LiquidCrystal_I2C lcd1(0x20, 16, 2); // I2C address, 16 columns, 2 rows
+LiquidCrystal_I2C lcd1(0x27, 20, 4); // I2C address, 20 columns, 4 rows
 
-const int botoes[4] = {4, 5, 6, 7};
+const int botoes[4] = {2, 5, 6, 7};
 bool estadoAtual[4] = {LOW, LOW, LOW, LOW};
 bool ultimoEstado[4] = {LOW, LOW, LOW, LOW};
 unsigned long ultimoTempoDebounce[4] = {0, 0, 0, 0};
