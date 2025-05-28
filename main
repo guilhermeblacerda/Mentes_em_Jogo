@@ -4,50 +4,42 @@
 
 #define NUM_LEDS 48
 #define PIN 11
-#define DEBOUNCE_DELAY 50 // Debounce delay in milliseconds
-#define LED_BRIGHTNESS 50 // Reduced brightness for sensory-friendly display
+#define DEBOUNCE_DELAY 50
+#define LED_BRIGHTNESS 50
 
 Adafruit_NeoPixel YagamyLight = Adafruit_NeoPixel(NUM_LEDS, PIN, NEO_RGB + NEO_KHZ800);
-LiquidCrystal_I2C lcd1(0x27, 20, 4); // I2C address, 20 columns, 4 rows
+LiquidCrystal_I2C lcd1(0x27, 20, 4);
 
+String desafioContinuacaoContinuacao;
+String desafioContinuacao;
 const int botoes[4] = {2, 5, 6, 7};
 bool estadoAtual[4] = {LOW, LOW, LOW, LOW};
 bool ultimoEstado[4] = {LOW, LOW, LOW, LOW};
 unsigned long ultimoTempoDebounce[4] = {0, 0, 0, 0};
 int posJogador[4] = {0, 0, 0, 0};
 int vezJogador = 0;
-bool esperandoProximoJogador = false; // Flag to wait for next player's button press
-bool jogoEncerrado = false; // Flag to indicate game has ended
-
-String desafios[20] = {
-  "Pule!", "Cante!", "Imite gato!", "Conte piada!",
-  "Ria sem motivo!", "Danca maluca!", "3 frutas!",
-  "Fale sem rir!", "Trava-lingua!", "Robo maluco!",
-  "Careta!", "Ao contrario!", "Animais!",
-  "Imite bicho!", "Palavra boba!", "Voz de velho!",
-  "Desenhe ar!", "Som estranho!", "Jogue d novo!",
-  "Passe a vez!"
-};
+bool esperandoProximoJogador = false;
+bool jogoEncerrado = false;
 
 bool casaTextura(int pos) {
-  return (pos == 5 || pos == 9 || pos == 14 || pos == 20);
+  return (pos == 4 || pos == 11 || pos == 18 || pos == 25);
 }
 
-// Function to center a message on a given row
 void printCentered(String msg, int row) {
-  msg.trim(); // Remove leading/trailing whitespace
+  msg.trim();
   lcd1.setCursor(0, row);
-  lcd1.print("                "); // Clear the row with 16 spaces
+  lcd1.print("                    ");
   int len = msg.length();
-  int col = (16 - len) / 2; // Calculate starting column to center (16 columns)
-  if (col < 0) col = 0; // Ensure non-negative column
+  int col = (20 - len) / 2;
+  if (col < 0) col = 0;
   lcd1.setCursor(col, row);
   lcd1.print(msg);
 }
 
 void setup() {
+  Serial.begin(9600);
   YagamyLight.begin();
-  YagamyLight.setBrightness(LED_BRIGHTNESS); // Set lower brightness
+  YagamyLight.setBrightness(LED_BRIGHTNESS);
   YagamyLight.show();
 
   for (int i = 0; i < 4; i++) {
@@ -76,38 +68,37 @@ void mostrarLedJogador(int jogador) {
   }
 
   // Light all LEDs in the player's color during their turn
-  for (int i = 0; i < NUM_LEDS; i++) {
-    YagamyLight.setPixelColor(i, cor);
+  for (int i = 0; i < 24; i++) {
+    YagamyLight.setPixelColor(2 * i, cor);
+    YagamyLight.setPixelColor(2 * i + 1, cor);
   }
 
-  // If the player has a valid position, light their current position in white
-  int casaAtual = posJogador[jogador]; // Player's board position (1–28)
-  if (casaAtual > 0 && casaAtual <= NUM_LEDS) { // Only light LEDs for positions 1–20
-    int ledIndex = casaAtual - 1; // Map position 1 to LED 0, position 2 to LED 1, etc.
-    YagamyLight.setPixelColor(ledIndex, YagamyLight.Color(255, 255, 255)); // White for current position
-    // Blink if on a texture house for emphasis
+  int casaAtual = posJogador[jogador];
+  if (casaAtual > 0 && casaAtual <= 24) {
+    int ledIndex1 = 2 * (casaAtual - 1);     // First LED of the pair
+    int ledIndex2 = 2 * (casaAtual - 1) + 1; // Second LED of the pair
+    YagamyLight.setPixelColor(ledIndex1, YagamyLight.Color(255, 255, 255));
+    YagamyLight.setPixelColor(ledIndex2, YagamyLight.Color(255, 255, 255));
     if (casaTextura(casaAtual)) {
       for (int i = 0; i < 3; i++) {
-        YagamyLight.setPixelColor(ledIndex, cor); // Player's color
+        YagamyLight.setPixelColor(ledIndex1, cor);
+        YagamyLight.setPixelColor(ledIndex2, cor);
         YagamyLight.show();
         delay(200);
-        YagamyLight.setPixelColor(ledIndex, YagamyLight.Color(255, 255, 255)); // White
+        YagamyLight.setPixelColor(ledIndex1, YagamyLight.Color(255, 255, 255));
+        YagamyLight.setPixelColor(ledIndex2, YagamyLight.Color(255, 255, 255));
         YagamyLight.show();
         delay(200);
       }
     }
   }
-
   YagamyLight.show();
 }
-
 void jogarDado(int jogador) {
-  // Simulate die roll animation on LEDs
   for (int i = 0; i < 10; i++) {
     int temp = random(1, 7);
     lcd1.clear();
     printCentered("Rolando: " + String(temp), 1);
-    // Flash a random LED during roll
     YagamyLight.clear();
     int randomLed = random(0, NUM_LEDS);
     uint32_t cor;
@@ -119,12 +110,13 @@ void jogarDado(int jogador) {
     }
     YagamyLight.setPixelColor(randomLed, cor);
     YagamyLight.show();
-    delay(100);
+    delay(70);
     YagamyLight.clear();
     YagamyLight.show();
   }
 
   int numero = random(1, 7);
+  Serial.println(numero);
   lcd1.clear();
   printCentered("Sorte: " + String(numero), 1);
   delay(800);
@@ -135,7 +127,7 @@ void jogarDado(int jogador) {
     lcd1.clear();
     printCentered(String("J") + String(jogador + 1) + " VENCEU!", 0);
     printCentered("J1: Resetar", 1);
-    // Victory animation: flash all LEDs in player's color
+
     uint32_t cor;
     switch (jogador) {
       case 0: cor = YagamyLight.Color(200, 50, 50); break;
@@ -158,21 +150,29 @@ void jogarDado(int jogador) {
 
   lcd1.clear();
   printCentered(String("J") + String(jogador + 1) + " casa " + String(posJogador[jogador]), 0);
-  
+
   if (casaTextura(posJogador[jogador])) {
     printCentered("Casa de TEXTURA!", 1);
   } else {
     int idx = posJogador[jogador] - 1;
-    if (idx >= 0 && idx < 20) {
-      String desafio = desafios[idx];
-      if (desafio.length() > 15) {
-        desafio = desafio.substring(0, 12) + "...";
+    if (idx >= 0 && idx < 23) {
+      if (Serial.available() > 0) {
+        String desafio = Serial.readStringUntil('\n');
+        if (desafio.length() > 20) {
+          if(desafio.length() > 40) {
+            desafioContinuacaoContinuacao = desafio.substring(40, 60);
+            printCentered(desafioContinuacaoContinuacao, 3);
+          }
+          desafioContinuacao = desafio.substring(20, 40);
+          desafio = desafio.substring(0, 20);
+          printCentered(desafioContinuacao, 2);
+        }
+        printCentered(desafio, 1);
+
       }
-      printCentered(desafio, 1);
     }
   }
 
-  // Update LEDs to show new position in white
   mostrarLedJogador(jogador);
 }
 
@@ -186,7 +186,7 @@ void resetGame() {
   lcd1.clear();
   printCentered("Jogador 1 vez!", 0);
   printCentered("Aperte botao!", 1);
-  YagamyLight.clear(); // Clear LEDs on reset
+  YagamyLight.clear();
   YagamyLight.show();
   mostrarLedJogador(vezJogador);
 }
@@ -195,7 +195,6 @@ void loop() {
   for (int i = 0; i < 4; i++) {
     bool leitura = digitalRead(botoes[i]);
 
-    // Debouncing
     if (leitura != ultimoEstado[i]) {
       ultimoTempoDebounce[i] = millis();
     }
@@ -205,21 +204,19 @@ void loop() {
         estadoAtual[i] = leitura;
 
         if (estadoAtual[i] == HIGH) {
-          if (jogoEncerrado && i == 0) { // Player 1's button resets the game
+          if (jogoEncerrado && i == 0) {
             resetGame();
           } else if (!jogoEncerrado) {
             if (i == vezJogador && !esperandoProximoJogador) {
-              // Current player presses their button to roll the die
               jogarDado(i);
-              esperandoProximoJogador = true; // Wait for next player's button
+              esperandoProximoJogador = true;
             } else if (esperandoProximoJogador && i == (vezJogador + 1) % 4) {
-              // Next player presses their button to start their turn
               vezJogador = (vezJogador + 1) % 4;
               esperandoProximoJogador = false;
               lcd1.clear();
               printCentered(String("Jogador ") + String(vezJogador + 1) + " vez!", 0);
               printCentered("Aperte botao!", 1);
-              mostrarLedJogador(vezJogador); // Show next player's color
+              mostrarLedJogador(vezJogador);
             }
           }
         }
