@@ -1,0 +1,31 @@
+import serial
+
+desafios = ["Pense em uma emocao e explique o que ela representa",
+"Lembre 3 objetos que voce viu na sala antes do jogo comecar",
+"Escolha uma forma que voce conhece e imite com a mao",
+"Quantos dedos tem sua mao",
+"Pule de um pe so tres vezes",
+"Quanto e uma flor mais outra flor",
+"Faca uma pergunta para outro jogador",
+"Complete a frase Hoje eu estou me sentindo...",
+"Faca uma expressao para o jagador a direita imitar",
+"Descreva como voce se sentiria se voce ganhasse o jogo",
+"Tente encostar sua mao no seu pe",
+"Complete a sequencia azul, verde, azul, ___",
+"Imite o som de um animal",
+"Fale do seu desenho favorito",
+"Fale o que voce acha do proximo jogador",
+"Faca uma pose para a foto",
+"Fique em pe com um pe so e conte ate 10",
+"Crie uma historia",
+"Faça uma respiracao profunda",
+"Diga uma coisa da cor do seu pino",
+"Convide algum jogador para fazer algo junto com voce",
+"Escolha algo e diga quem esta usando ou quem poderia usar",
+"Escolha um objeto ao seu redor e diga para que ele serve"]
+
+with serial.Serial('COM7', 9600) as ser:
+    while True:
+        if ser.in_waiting > 0:  # Verificar se há dados disponíveis
+            dado = ser.readline().decode('utf-8')
+            ser.write(bytes(desafios[int(dado)], 'utf-8'))
