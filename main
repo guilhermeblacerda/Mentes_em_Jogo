@@ -2,12 +2,12 @@
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 
-#define NUM_LEDS 48
-#define PIN 11
-#define DEBOUNCE_DELAY 50
-#define LED_BRIGHTNESS 50
-
-Adafruit_NeoPixel YagamyLight = Adafruit_NeoPixel(NUM_LEDS, PIN, NEO_RGB + NEO_KHZ800);
+#define NUM_LEDS 48//Número de leds
+#define PIN 11//Pino do arduino que os leds está ligado
+#define DEBOUNCE_DELAY 50//Delay entre o pressionado do 
+#define LED_BRIGHTNESS 50//Nível de luz da led
+#define LONG_PRESS_DELAY 2000 // 2 segundos para confirmar
+Adafruit_NeoPixel YagamyLight = Adafruit_NeoPixel(NUM_LEDS, PIN, NEO_RGB + NEO_KHZ800);//
 LiquidCrystal_I2C lcd1(0x27, 20, 4);
 
 String desafioContinuacaoContinuacao;
@@ -20,9 +20,15 @@ int posJogador[4] = {0, 0, 0, 0};
 int vezJogador = 0;
 bool esperandoProximoJogador = false;
 bool jogoEncerrado = false;
+bool efeitoRGBAtivo = false;
+int ledIndex1;
+int ledIndex2;
+int numJogadores = 2; // Default to 2 players
+bool selecionandoJogadores = true; // Flag for player selection phase
+unsigned long tempoPressionado = 0; // For long press detection
 
 bool casaTextura(int pos) {
-  return (pos == 4 || pos == 11 || pos == 18 || pos == 25);
+  return (pos == 7 || pos == 14 || pos == 21 || pos == 28);
 }
 
 void printCentered(String msg, int row) {
@@ -36,6 +42,21 @@ void printCentered(String msg, int row) {
   lcd1.print(msg);
 }
 
+uint32_t interpolarCor(uint32_t cor1, uint32_t cor2, float t) {
+  uint8_t r1 = (cor1 >> 16) & 0xFF;
+  uint8_t g1 = (cor1 >> 8) & 0xFF;
+  uint8_t b1 = cor1 & 0xFF;
+  uint8_t r2 = (cor2 >> 16) & 0xFF;
+  uint8_t g2 = (cor2 >> 8) & 0xFF;
+  uint8_t b2 = cor2 & 0xFF;
+
+  uint8_t r = r1 + (r2 - r1) * t;
+  uint8_t g = g1 + (g2 - g1) * t;
+  uint8_t b = b1 + (b2 - b1) * t;
+
+  return YagamyLight.Color(r, g, b);
+}
+
 void setup() {
   Serial.begin(9600);
   YagamyLight.begin();
@@ -43,57 +64,93 @@ void setup() {
   YagamyLight.show();
 
   for (int i = 0; i < 4; i++) {
-    pinMode(botoes[i], INPUT);
+    pinMode(botoes[i], INPUT_PULLUP);
   }
 
   lcd1.init();
   lcd1.backlight();
   randomSeed(analogRead(0));
 
-  printCentered("Jogador 1 vez!", 0);
-  printCentered("Aperte botao!", 1);
-  mostrarLedJogador(vezJogador);
+  // Start in player selection mode
+  printCentered("Num Jogadores: 2", 0);
+  printCentered("Botao 1: Muda", 1);
+  printCentered("Segure o botao 2", 2);
+  printCentered("para confirmae", 3);
 }
 
 void mostrarLedJogador(int jogador) {
   YagamyLight.clear();
 
-  // Define player colors (softer tones for sensory-friendly design)
   uint32_t cor;
   switch (jogador) {
-    case 0: cor = YagamyLight.Color(200, 50, 50); break;   // Jogador 1: Soft red
-    case 1: cor = YagamyLight.Color(50, 200, 50); break;   // Jogador 2: Soft green
-    case 2: cor = YagamyLight.Color(50, 50, 200); break;   // Jogador 3: Soft blue
-    case 3: cor = YagamyLight.Color(200, 200, 50); break;  // Jogador 4: Soft yellow
+    case 0: cor = YagamyLight.Color(10, 250, 10); break;   // Jogador 1: verde
+    case 1: cor = YagamyLight.Color(255, 255, 20); break;  // Jogador 2: amarelo
+    case 2: cor = YagamyLight.Color(15, 15, 215); break;   // Jogador 3: azul
+    case 3: cor = YagamyLight.Color(215, 15, 15); break;   // Jogador 4: vermelho
   }
 
-  // Light all LEDs in the player's color during their turn
-  for (int i = 0; i < 24; i++) {
-    YagamyLight.setPixelColor(2 * i, cor);
-    YagamyLight.setPixelColor(2 * i + 1, cor);
+  for (int i = 0; i < 48; i++) {
+    YagamyLight.setPixelColor(i, cor);
   }
 
   int casaAtual = posJogador[jogador];
-  if (casaAtual > 0 && casaAtual <= 24) {
-    int ledIndex1 = 2 * (casaAtual - 1);     // First LED of the pair
-    int ledIndex2 = 2 * (casaAtual - 1) + 1; // Second LED of the pair
-    YagamyLight.setPixelColor(ledIndex1, YagamyLight.Color(255, 255, 255));
-    YagamyLight.setPixelColor(ledIndex2, YagamyLight.Color(255, 255, 255));
-    if (casaTextura(casaAtual)) {
-      for (int i = 0; i < 3; i++) {
-        YagamyLight.setPixelColor(ledIndex1, cor);
-        YagamyLight.setPixelColor(ledIndex2, cor);
-        YagamyLight.show();
-        delay(200);
-        YagamyLight.setPixelColor(ledIndex1, YagamyLight.Color(255, 255, 255));
-        YagamyLight.setPixelColor(ledIndex2, YagamyLight.Color(255, 255, 255));
-        YagamyLight.show();
-        delay(200);
-      }
-    }
+  if (casaAtual > 0 && casaAtual <= 7) {
+    ledIndex1 = 2 * (casaAtual - 1);
+    ledIndex2 = 2 * (casaAtual - 1) + 1;
+  } else if (casaAtual >= 8 && casaAtual <= 14) {
+    ledIndex1 = 2 * (casaAtual - 2);
+    ledIndex2 = 2 * (casaAtual - 2) + 1;
+  } else if (casaAtual >= 15 && casaAtual <= 21) {
+    ledIndex1 = 2 * (casaAtual - 3);
+    ledIndex2 = 2 * (casaAtual - 3) + 1;
+  } else if (casaAtual >= 22 && casaAtual <= 28) {
+    ledIndex1 = 2 * (casaAtual - 4);
+    ledIndex2 = 2 * (casaAtual - 4) + 1;
   }
-  YagamyLight.show();
+
+  YagamyLight.setPixelColor(ledIndex1, YagamyLight.Color(255, 255, 255));
+  YagamyLight.setPixelColor(ledIndex2, YagamyLight.Color(255, 255, 255));
+
+  if (casaTextura(casaAtual)) {
+    efeitoRGBAtivo = true;
+  } else {
+    efeitoRGBAtivo = false;
+    YagamyLight.show();
+  }
 }
+
+void efeitoRGBOndulatorio() {
+  static unsigned long ultimoTempoRGB = 0;
+  static float offset = 0;
+  const int intervaloRGB = 50;
+  const int comprimentoOnda = 12;
+  const int passosTransicao = 10;
+
+  if (millis() - ultimoTempoRGB >= intervaloRGB) {
+    YagamyLight.clear();
+
+    uint32_t coresRGB[4] = {
+      YagamyLight.Color(255, 0, 0),
+      YagamyLight.Color(0, 255, 0),
+      YagamyLight.Color(0, 0, 255),
+      YagamyLight.Color(255, 0, 0)
+    };
+
+    for (int i = 0; i < NUM_LEDS; i++) {
+      float posicao = (i + offset) / (float)comprimentoOnda;
+      int segmento = (int)posicao % 3;
+      float t = posicao - (int)posicao;
+      t = (int)(t * passosTransicao) / (float)passosTransicao;
+      uint32_t cor = interpolarCor(coresRGB[segmento], coresRGB[segmento + 1], t);
+      YagamyLight.setPixelColor(i, cor);
+    }
+
+    YagamyLight.show();
+    offset = fmod(offset + 0.2, comprimentoOnda * 3);
+    ultimoTempoRGB = millis();
+  }
+}
+
 void jogarDado(int jogador) {
   for (int i = 0; i < 10; i++) {
     int temp = random(1, 7);
@@ -116,24 +173,23 @@ void jogarDado(int jogador) {
   }
 
   int numero = random(1, 7);
-  Serial.println(numero);
   lcd1.clear();
   printCentered("Sorte: " + String(numero), 1);
   delay(800);
 
   posJogador[jogador] += numero;
-  if (posJogador[jogador] > 28) {
-    posJogador[jogador] = 28;
+  if (posJogador[jogador] > 29) {
+    posJogador[jogador] = 29;
     lcd1.clear();
     printCentered(String("J") + String(jogador + 1) + " VENCEU!", 0);
     printCentered("J1: Resetar", 1);
 
     uint32_t cor;
     switch (jogador) {
-      case 0: cor = YagamyLight.Color(200, 50, 50); break;
-      case 1: cor = YagamyLight.Color(50, 200, 50); break;
-      case 2: cor = YagamyLight.Color(50, 50, 200); break;
-      case 3: cor = YagamyLight.Color(200, 200, 50); break;
+      case 0: cor = YagamyLight.Color(10, 250, 10); break;   // Jogador 1: verde
+      case 1: cor = YagamyLight.Color(255, 255, 20); break;  // Jogador 2: amarelo
+      case 2: cor = YagamyLight.Color(15, 15, 215); break;   // Jogador 3: azul
+      case 3: cor = YagamyLight.Color(215, 15, 15); break;   // Jogador 4: vermelho
     }
     for (int i = 0; i < 5; i++) {
       YagamyLight.fill(cor, 0, NUM_LEDS);
@@ -147,28 +203,29 @@ void jogarDado(int jogador) {
     jogoEncerrado = true;
     return;
   }
+  Serial.println(posJogador[jogador]);
 
   lcd1.clear();
   printCentered(String("J") + String(jogador + 1) + " casa " + String(posJogador[jogador]), 0);
 
   if (casaTextura(posJogador[jogador])) {
-    printCentered("Casa de TEXTURA!", 1);
+    printCentered("Feche os olhos e", 1);
+    printCentered("adivinhe a TEXTURA!", 2);
   } else {
     int idx = posJogador[jogador] - 1;
-    if (idx >= 0 && idx < 23) {
+    if (idx >= 0 && idx < 28) {
       if (Serial.available() > 0) {
-        String desafio = Serial.readStringUntil('\n');
+        String desafio = Serial.readString();
         if (desafio.length() > 20) {
-          if(desafio.length() > 40) {
+          desafioContinuacao = desafio.substring(20, 40);
+          if (desafio.length() > 40) {
             desafioContinuacaoContinuacao = desafio.substring(40, 60);
             printCentered(desafioContinuacaoContinuacao, 3);
           }
-          desafioContinuacao = desafio.substring(20, 40);
           desafio = desafio.substring(0, 20);
           printCentered(desafioContinuacao, 2);
         }
         printCentered(desafio, 1);
-
       }
     }
   }
@@ -183,6 +240,7 @@ void resetGame() {
   vezJogador = 0;
   esperandoProximoJogador = false;
   jogoEncerrado = false;
+  efeitoRGBAtivo = false;
   lcd1.clear();
   printCentered("Jogador 1 vez!", 0);
   printCentered("Aperte botao!", 1);
@@ -192,7 +250,51 @@ void resetGame() {
 }
 
 void loop() {
-  for (int i = 0; i < 4; i++) {
+  if (selecionandoJogadores) {
+    static int tempNumJogadores = 2;
+    bool leituraBotao1 = digitalRead(botoes[0]);
+    bool leituraBotao2 = digitalRead(botoes[1]);
+
+    if (leituraBotao1 != ultimoEstado[0]) {
+      ultimoTempoDebounce[0] = millis();
+    }
+    if ((millis() - ultimoTempoDebounce[0]) > DEBOUNCE_DELAY) {
+      if (leituraBotao1 != estadoAtual[0]) {
+        estadoAtual[0] = leituraBotao1;
+        if (estadoAtual[0] == LOW) {
+          tempNumJogadores = (tempNumJogadores % 3) + 2; // Cycle between 2, 3, 4
+          lcd1.clear();
+          printCentered("Num Jogadores: " + String(tempNumJogadores), 0);
+          printCentered("Botao 1: Muda", 1);
+          printCentered("Botao 2: Confirma", 2);
+        }
+      }
+    }
+    ultimoEstado[0] = leituraBotao1;
+
+    if (leituraBotao2 != ultimoEstado[1]) {
+      ultimoTempoDebounce[1] = millis();
+      if (leituraBotao2 == LOW) {
+        tempoPressionado = millis();
+      }
+    }
+    if (leituraBotao2 == LOW && (millis() - tempoPressionado) >= LONG_PRESS_DELAY) {
+      numJogadores = tempNumJogadores;
+      selecionandoJogadores = false;
+      lcd1.clear();
+      printCentered("Jogador 1 vez!", 0);
+      printCentered("Aperte botao!", 1);
+      mostrarLedJogador(vezJogador);
+    }
+    ultimoEstado[1] = leituraBotao2;
+    return;
+  }
+
+  if (efeitoRGBAtivo && esperandoProximoJogador && !jogoEncerrado) {
+    efeitoRGBOndulatorio();
+  }
+
+  for (int i = 0; i < numJogadores; i++) {
     bool leitura = digitalRead(botoes[i]);
 
     if (leitura != ultimoEstado[i]) {
@@ -203,16 +305,18 @@ void loop() {
       if (leitura != estadoAtual[i]) {
         estadoAtual[i] = leitura;
 
-        if (estadoAtual[i] == HIGH) {
+        if (estadoAtual[i] == LOW) {
           if (jogoEncerrado && i == 0) {
             resetGame();
           } else if (!jogoEncerrado) {
             if (i == vezJogador && !esperandoProximoJogador) {
+              lcd1.clear();
               jogarDado(i);
               esperandoProximoJogador = true;
-            } else if (esperandoProximoJogador && i == (vezJogador + 1) % 4) {
-              vezJogador = (vezJogador + 1) % 4;
+            } else if (esperandoProximoJogador && i == (vezJogador + 1) % numJogadores) {
+              vezJogador = (vezJogador + 1) % numJogadores;
               esperandoProximoJogador = false;
+              efeitoRGBAtivo = false;
               lcd1.clear();
               printCentered(String("Jogador ") + String(vezJogador + 1) + " vez!", 0);
               printCentered("Aperte botao!", 1);
