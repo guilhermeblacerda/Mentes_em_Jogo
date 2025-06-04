@@ -1,228 +1,545 @@
-#include <Adafruit_NeoPixel.h>
-#include <Wire.h>
-#include <LiquidCrystal_I2C.h>
+#include <Adafruit_NeoPixel.h> //Importa a biblioteca para a fita de led 
+#include <Wire.h> //Importa a biblioteca para o arduino se comunicar com o dispositivo I2C da tela 
+#include <LiquidCrystal_I2C.h> //Importa a biblioteca para o arduino controlar a tela com comandos parecidos com a biblioteca LiquidCrystal 
 
-#define NUM_LEDS 48
-#define PIN 11
-#define DEBOUNCE_DELAY 50
-#define LED_BRIGHTNESS 50
+#define NUM_LEDS 48 //Número de leds
+#define PIN 11 //Pino do arduino que os leds está ligado
+#define DEBOUNCE_DELAY 50 //Delay entre o pressionado do 
+#define LED_BRIGHTNESS 50 //Nível de luz da led
+#define LONG_PRESS_DELAY 2000  // 2 segundos para confirmar
 
-Adafruit_NeoPixel YagamyLight = Adafruit_NeoPixel(NUM_LEDS, PIN, NEO_RGB + NEO_KHZ800);
-LiquidCrystal_I2C lcd1(0x27, 20, 4);
+Adafruit_NeoPixel leds = Adafruit_NeoPixel(NUM_LEDS, PIN, NEO_RGB + NEO_KHZ800); //Definindo "leds" como o nome da variavel que comanda os leds
+LiquidCrystal_I2C lcd1(0x27, 20, 4); //Definindo "lcd1" como variável que controla a tela
 
-String desafioContinuacaoContinuacao;
-String desafioContinuacao;
-const int botoes[4] = {2, 5, 6, 7};
-bool estadoAtual[4] = {LOW, LOW, LOW, LOW};
-bool ultimoEstado[4] = {LOW, LOW, LOW, LOW};
-unsigned long ultimoTempoDebounce[4] = {0, 0, 0, 0};
-int posJogador[4] = {0, 0, 0, 0};
-int vezJogador = 0;
-bool esperandoProximoJogador = false;
-bool jogoEncerrado = false;
+//Variáveis para armazenar os estados atual e anterior de cada botão
+bool estadoAtual[4] = {HIGH, HIGH, HIGH, HIGH}; //Armazena o estado atual do botão //teste
+bool ultimoEstado[4] = {LOW, LOW, LOW, LOW}; //Armazena o estado anterior do botão
 
+unsigned long tempoPressionado = 0; //Long para verificar quanto tempo foi pressionado no botão de confirmar 
+unsigned long ultimoTempoDebounce[4] = {0, 0, 0, 0}; //Variável que armazena o momento em que a última mudança de estado foi detectada para cada botão
+const int botoes[4] = {2, 5, 6, 7}; //Pinos onde os botões estão encaixados
+int posJogador[4] = {0, 0, 0, 0}; //Posição de cada jogador
+int vezJogador = 0; //Indica qual jogador deve jogar
+int numJogadores = 2; //Mínimo de 2 jogadores no tabuleiro
+bool esperandoProximoJogador = false; //Variável feita para verificar se o jogo está esperando o próiximo jogador apertar o botão
+bool jogoEncerrado = false; //Bool que define se o jogo acabou ou não
+bool efeitoRGBAtivo = false; //Bool que ativa o efeito RGB se o jogador caiu em uma casa de textura 
+bool selecionandoJogadores = true; //Bool que afirma se o jogador já selecionou a quantidade de jogadores
+
+//Define quais são as posiões das casas de texturas
 bool casaTextura(int pos) {
-  return (pos == 4 || pos == 11 || pos == 18 || pos == 25);
+
+  return (pos == 7 || pos == 14 || pos == 21 || pos == 28); //Retorna um True para caso a posição do jogador seja igual ao "pos"
+
 }
 
-void printCentered(String msg, int row) {
-  msg.trim();
-  lcd1.setCursor(0, row);
-  lcd1.print("                    ");
-  int len = msg.length();
-  int col = (20 - len) / 2;
-  if (col < 0) col = 0;
-  lcd1.setCursor(col, row);
-  lcd1.print(msg);
+//Função para deixar as mensgans que aparecem na tela centralizadas
+void printCentered(String msg, int row) { //Tem que ser definida a mensagem e qual das 4 linhas ela será escrita
+    
+  int len; //Variável para receber o valor do tamanho da mensagem 
+  int col; //Variável para receber o valor de onde a mensagem deve começar para ser centralizada
+
+  //msg.trim(); Corta qualquer espaço extra no começo ou final da mensagem//teste
+
+  lcd1.setCursor(0, row); //Define o cursor para o começo da linha definida
+  lcd1.print("                    "); //20 espaços brancos para limpar a linha
+
+  len = msg.length(); //Verifica quantos caracteres tem a mensagem
+  col = (20 - len) / 2; //Calcula onde a mensagem deve aparecer para ser centralizada
+
+  if (col < 0) col = 0; //Garante que a mensagem vai aparecer no começo da linha caso tenha qualquer problema
+
+  lcd1.setCursor(col, row); //Define o cursor para começar onde mensagem será centralizada
+  lcd1.print(msg); //Mostra a mensagem centralizada
+
 }
 
+//Calcula a cor intermediária para o efeito RGB ondulatório
+uint32_t interpolarCor(uint32_t cor1, uint32_t cor2, float t) {
+
+  uint8_t r1 = (cor1 >> 16) & 0xFF; //Extrai o canal vermelho da primeira cor
+  uint8_t g1 = (cor1 >> 8) & 0xFF; //Extrai o canal verde da primeira cor
+  uint8_t b1 = cor1 & 0xFF; //Extrai o canal azul da primeira cor
+
+  uint8_t r2 = (cor2 >> 16) & 0xFF; //Extrai o canal vermelho da segunda cor
+  uint8_t g2 = (cor2 >> 8) & 0xFF; //Extrai o canal verde da segunda cor
+  uint8_t b2 = cor2 & 0xFF; //Extrai o canal azul da segunda cor
+
+  //Interpola cada canal individualmente
+  uint8_t r = r1 + (r2 - r1) * t;
+  uint8_t g = g1 + (g2 - g1) * t;
+  uint8_t b = b1 + (b2 - b1) * t;
+
+  return leds.Color(r, g, b); //Retorna qual deve ser a cor do led
+
+}
+
+//Setup, oque deve ser mostrado quando o tabuleiro é ligado
 void setup() {
-  Serial.begin(9600);
-  YagamyLight.begin();
-  YagamyLight.setBrightness(LED_BRIGHTNESS);
-  YagamyLight.show();
 
+  Serial.begin(9600); //Comunicação entre arduino e computador
+
+  //Leds
+  leds.begin(); //Inicializa os leds
+  leds.setBrightness(LED_BRIGHTNESS); //Define qual o nível de brilho das leds
+  leds.show(); //Mostra os leds
+
+  //Botões
+  //Inicializa os pinos dos botões como "INPUT_PULLUP"
   for (int i = 0; i < 4; i++) {
+
     pinMode(botoes[i], INPUT_PULLUP);
+
   }
 
-  lcd1.init();
-  lcd1.backlight();
-  randomSeed(analogRead(0));
+  //Tela LCD
+  lcd1.init(); //Inicia a tela
+  lcd1.backlight(); //Inicia o backlight da tela
 
-  printCentered("Jogador 1 vez!", 0);
-  printCentered("Aperte botao!", 1);
-  mostrarLedJogador(vezJogador);
+  randomSeed(analogRead(0)); //Para o dado funcionar e mostrar um número aleatório deve ser posto isso no setup
+
+  //Mensagem inicial de quantos jogadores irão jogar
+  printCentered("Num Jogadores: 2", 0);
+  printCentered("Botao 1: Muda", 1);
+  printCentered("Segure o botao 2", 2);
+  printCentered("para confirmae", 3);
+
 }
 
+//Função que comanda qual cor o tabuleiro deve brilhar de acordo com o jogador e qual casa ele está e deve ir
 void mostrarLedJogador(int jogador) {
-  YagamyLight.clear();
 
-  // Define player colors (softer tones for sensory-friendly design)
+  int ledIndex1; //Primeiro dos 2 leds que brilha em branco na casa onde o jogador deve ir
+  int ledIndex2; //Segundo dos 2 leds que brilha em branco na casa onde o jogador deve ir
+    
+  leds.clear();//Limpa os leds para não causar nenhuma interferência 
+
+  //Cria a variavel cor e é definida por qual jogador está jogando
   uint32_t cor;
   switch (jogador) {
-    case 0: cor = YagamyLight.Color(200, 50, 50); break;   // Jogador 1: Soft red
-    case 1: cor = YagamyLight.Color(50, 200, 50); break;   // Jogador 2: Soft green
-    case 2: cor = YagamyLight.Color(50, 50, 200); break;   // Jogador 3: Soft blue
-    case 3: cor = YagamyLight.Color(200, 200, 50); break;  // Jogador 4: Soft yellow
+
+    case 0: cor = leds.Color(10, 250, 10); break;   // Jogador 1: vermelho
+    case 1: cor = leds.Color(255, 255, 20); break;  // Jogador 2: amarelo
+    case 2: cor = leds.Color(15, 15, 215); break;   // Jogador 3: azul
+    case 3: cor = leds.Color(215, 15, 15); break;   // Jogador 4: verde
+
   }
 
-  // Light all LEDs in the player's color during their turn
-  for (int i = 0; i < 24; i++) {
-    YagamyLight.setPixelColor(2 * i, cor);
-    YagamyLight.setPixelColor(2 * i + 1, cor);
-  }
+  leds.fill(cor, 0, NUM_LEDS); //Faz todos os leds brilharem na cor do pino do jogador que está jogando
 
+  //Cada casa equivale a 2 leds
   int casaAtual = posJogador[jogador];
-  if (casaAtual > 0 && casaAtual <= 24) {
-    int ledIndex1 = 2 * (casaAtual - 1);     // First LED of the pair
-    int ledIndex2 = 2 * (casaAtual - 1) + 1; // Second LED of the pair
-    YagamyLight.setPixelColor(ledIndex1, YagamyLight.Color(255, 255, 255));
-    YagamyLight.setPixelColor(ledIndex2, YagamyLight.Color(255, 255, 255));
-    if (casaTextura(casaAtual)) {
-      for (int i = 0; i < 3; i++) {
-        YagamyLight.setPixelColor(ledIndex1, cor);
-        YagamyLight.setPixelColor(ledIndex2, cor);
-        YagamyLight.show();
-        delay(200);
-        YagamyLight.setPixelColor(ledIndex1, YagamyLight.Color(255, 255, 255));
-        YagamyLight.setPixelColor(ledIndex2, YagamyLight.Color(255, 255, 255));
-        YagamyLight.show();
-        delay(200);
-      }
-    }
-  }
-  YagamyLight.show();
-}
-void jogarDado(int jogador) {
-  for (int i = 0; i < 10; i++) {
-    int temp = random(1, 7);
-    lcd1.clear();
-    printCentered("Rolando: " + String(temp), 1);
-    YagamyLight.clear();
-    int randomLed = random(0, NUM_LEDS);
-    uint32_t cor;
-    switch (jogador) {
-      case 0: cor = YagamyLight.Color(200, 50, 50); break;
-      case 1: cor = YagamyLight.Color(50, 200, 50); break;
-      case 2: cor = YagamyLight.Color(50, 50, 200); break;
-      case 3: cor = YagamyLight.Color(200, 200, 50); break;
-    }
-    YagamyLight.setPixelColor(randomLed, cor);
-    YagamyLight.show();
-    delay(70);
-    YagamyLight.clear();
-    YagamyLight.show();
+  if (casaAtual >= 0 && casaAtual <= 7 || casaAtual == 29) { //"|| casaAtual > 28" serve para garantir que quando o personágem da uma volta no tabuleiro o led brilhará corretamente
+
+    //Calculo dos 2 leds que brilham antes da primeira casa de textura
+    ledIndex1 = 2 * (casaAtual - 1);
+    ledIndex2 = 2 * (casaAtual - 1) + 1;
+
+  } else if (casaAtual >= 8 && casaAtual <= 14) {
+
+    //Calculo dos 2 leds que brilham antes da segunda casa de textura
+    ledIndex1 = 2 * (casaAtual - 2);
+    ledIndex2 = 2 * (casaAtual - 2) + 1;
+
+  } else if (casaAtual >= 15 && casaAtual <= 21) {
+
+    //Calculo dos 2 leds que brilham antes da terceira casa de textura
+    ledIndex1 = 2 * (casaAtual - 3);
+    ledIndex2 = 2 * (casaAtual - 3) + 1;
+
+  } else if (casaAtual >= 22 && casaAtual <= 28) {
+
+    //Calculo dos 2 leds que brilham antes da quarta casa de textura
+    ledIndex1 = 2 * (casaAtual - 4);
+    ledIndex2 = 2 * (casaAtual - 4) + 1;
+
   }
 
-  int numero = random(1, 7);
-  Serial.println(numero);
-  lcd1.clear();
-  printCentered("Sorte: " + String(numero), 1);
-  delay(800);
+  //Manda as leds da casa de onde o jogador está brilhar em branco
+  leds.setPixelColor(ledIndex1, leds.Color(255, 255, 255));
+  leds.setPixelColor(ledIndex2, leds.Color(255, 255, 255));
 
-  posJogador[jogador] += numero;
-  if (posJogador[jogador] > 28) {
-    posJogador[jogador] = 28;
-    lcd1.clear();
-    printCentered(String("J") + String(jogador + 1) + " VENCEU!", 0);
-    printCentered("J1: Resetar", 1);
+  //Verifica se os leds irão brilhar com efeito de onda RGB ou na cor do pino do jogador
+  if (casaTextura(casaAtual)) {
 
-    uint32_t cor;
-    switch (jogador) {
-      case 0: cor = YagamyLight.Color(200, 50, 50); break;
-      case 1: cor = YagamyLight.Color(50, 200, 50); break;
-      case 2: cor = YagamyLight.Color(50, 50, 200); break;
-      case 3: cor = YagamyLight.Color(200, 200, 50); break;
-    }
-    for (int i = 0; i < 5; i++) {
-      YagamyLight.fill(cor, 0, NUM_LEDS);
-      YagamyLight.show();
-      delay(300);
-      YagamyLight.clear();
-      YagamyLight.show();
-      delay(300);
-    }
-    esperandoProximoJogador = false;
-    jogoEncerrado = true;
-    return;
-  }
+    //Caso a casa atual seja de textura o tabuleiro irá brilhar com um efeitp de onda RGB
+    efeitoRGBAtivo = true; 
 
-  lcd1.clear();
-  printCentered(String("J") + String(jogador + 1) + " casa " + String(posJogador[jogador]), 0);
-
-  if (casaTextura(posJogador[jogador])) {
-    printCentered("Casa de TEXTURA!", 1);
   } else {
-    int idx = posJogador[jogador] - 1;
-    if (idx >= 0 && idx < 23) {
-      if (Serial.available() > 0) {
-        String desafio = Serial.readStringUntil('\n');
+
+    //Caso contrário o tabuleiro mostrará a casa onde o jogador deve ir
+    efeitoRGBAtivo = false;
+    leds.show();
+
+  }
+
+}
+
+//Função que faz o efeito "wave" da casa de textura
+void efeitoRGBOndulatorio() {
+
+  static unsigned long ultimoTempoRGB = 0; //Verifica qual o ultimo tempo que foi rodado o efeito RGB
+  static float offset = 0; //Variável para controlar o deslocamento do efeito de onda
+  const int intervaloRGB = 50; //Intervalo entre os ciclos RGB
+  const int comprimentoOnda = 12; //Comprimento da fita de led(12 leds)
+  const int passosTransicao = 10; //Número de passos para transição suave entre cores
+
+  // Variáveis para calcular a posição e o segmento da onda
+  int segmento;
+  float posicao;
+  float t;
+
+  if (millis() - ultimoTempoRGB >= intervaloRGB) {
+
+    leds.clear();
+
+    //Ciclo de cores RGB
+    uint32_t coresRGB[4] = {
+
+      leds.Color(255, 0, 0), //Vermelho
+      leds.Color(0, 255, 0), //Verde
+      leds.Color(0, 0, 255), //Azul
+      leds.Color(255, 0, 0) //Vermelho completando o ciclo
+
+    };
+
+    for (int i = 0; i < NUM_LEDS; i++) {
+
+      posicao = (i + offset) / (float)comprimentoOnda; //Calcula a posição na onda
+
+      segmento = (int)posicao % 3; //Determina o segmento de cor (0: vermelho-verde, 1: verde-azul, 2: azul-vermelho)
+
+      t = posicao - (int)posicao; //Calcula o fator de interpolação (parte fracionária da posição)
+      t = (int)(t * passosTransicao) / (float)passosTransicao; //Ajusta t para transições mais suaves
+
+      uint32_t cor = interpolarCor(coresRGB[segmento], coresRGB[segmento + 1], t); //Interpola entre a cor atual e a próxima
+      leds.setPixelColor(i, cor); //Faz o led brilhar com a cor desejada
+
+    }
+
+    leds.show(); //Liga as leds
+    offset = fmod(offset + 0.2, comprimentoOnda * 3); //Offset(novo) é definido pelo resto da divisão entre o offset(antigo) + 0.2 e comprimentoOnda * 3
+    ultimoTempoRGB = millis(); //Salva em que tempo esse ciclo foi feito
+
+  }
+
+}
+
+
+//Função de jogar o dado
+void jogarDado(int jogador) {
+
+    int numeroAleatorio; //Variável que números aleatórios são definidos nela para servir na "animação" do dado
+    int randomLed; //Variável que leds aleatórias são definidas nela para servir na "animação" do dado
+    int dado; //Variável que define o número real que o jogador tirou dado
+    int idx; //Variável que define qual a posição do desafio na lista do python
+    String desafio; //Variável que recebe o desáfio que aparecerá na tela
+    String desafioContinuacao; //Variável que armazena a menságem do desafio caso ela passe das 20 linhas
+    String desafioContinuacaoContinuacao; //Variável que armazena a menságem do desafio caso ela passe das 40 linhas
+
+  //Aparece varios números aleatórios rapidamente para dar o efeito do dados estar sendo jogado, junto com leds aleatórios brilhando 
+  for (int i = 0; i < 10; i++) {
+
+    numeroAleatorio = random(1, 7); //Escolhe um número aleatório entre 1 e 6
+    lcd1.clear(); //Limpa a tela
+    printCentered("Rolando: " + String(numeroAleatorio), 1); //Mostra a mensagem "Rolando" com vários números aparecendo, dando a ideia de um dado sendo jogado
+
+    leds.clear(); //Desliga os leds
+    randomLed = random(0, NUM_LEDS); //Escolhe algum led aleatório para brilhar na cor do jogador
+
+    //Define a cor dos jogadores
+    uint32_t cor;
+    switch (jogador) {
+
+      case 0: cor = leds.Color(10, 250, 10); break;   // Jogador 1: vermelho
+      case 1: cor = leds.Color(255, 255, 20); break;  // Jogador 2: amarelo
+      case 2: cor = leds.Color(15, 15, 215); break;   // Jogador 3: azul
+      case 3: cor = leds.Color(215, 15, 15); break;   // Jogador 4: verde
+
+    }
+
+    leds.setPixelColor(randomLed, cor); //Define qual led aleatório irá brilhar
+    leds.show(); //Faz o led aleatório brilhar
+
+    delay(70); //Delay para fazer o led piscar
+    
+    //Liga e desliga do led para ele brilhar
+    leds.clear(); //Desliga
+    leds.show(); //Liga
+
+  }
+
+  //Escolhe um número entre 1 e 6 para ser tirado no dado e aparece na tela
+  dado = random(1, 7); //Número tirado no dado
+  lcd1.clear(); //Apagando informações da tela
+  printCentered("Sorte: " + String(dado), 1); // Menságem que aparece na tela
+  delay(800); //Delay de 0,8 segundos da mensagem do dado
+
+  posJogador[jogador] += dado; //Número tirado no dado é adicionado na posição do jogador
+
+  //Checagem se o jogador ganhou o jogo
+  if (posJogador[jogador] > 29) {
+
+    lcd1.clear(); //Limpa a tela LCD
+    printCentered(String("J") + String(jogador + 1) + " VENCEU!", 0); //Faz aparecer na tela qual jogador venceu
+    printCentered("J1: Resetar", 1); //Avisa que é preciso que o jogador 1(botão vermelho) aparte o botão para o jogo recomeçar
+
+    //Define a cor dos jogadores
+    uint32_t cor;
+    switch (jogador) {
+
+      case 0: cor = leds.Color(10, 250, 10); break;   // Jogador 1: vermelho
+      case 1: cor = leds.Color(255, 255, 20); break;  // Jogador 2: amarelo
+      case 2: cor = leds.Color(15, 15, 215); break;   // Jogador 3: azul
+      case 3: cor = leds.Color(215, 15, 15); break;   // Jogador 4: verde
+
+    }
+
+    //Faz os leds piscarem na cor do jogador que ganhou
+    for (int i = 0; i < 5; i++) {
+
+      leds.fill(cor, 0, NUM_LEDS); //Define a cor dos leds com a cor do jogador que ganhou
+      leds.show(); //Faz as leds brilharem
+      delay(300); //Espera 0,3 segundos
+      leds.clear(); //Apaga os leds
+      leds.show(); //Liga os leds
+      delay(300); //Espera 0,3 segundos
+
+    }
+
+    esperandoProximoJogador = false; //Garante que o único que pode apertar o botão é o jogador 1
+    jogoEncerrado = true; //Encerra o jogo
+    return; //Encerra a função
+    
+  }
+
+  Serial.println(posJogador[jogador]); //Envia para o python qual a posição do jogador
+
+  lcd1.clear(); //Apaga as mensagens da tela
+  printCentered(String("J") + String(jogador + 1) + " casa " + String(posJogador[jogador]), 0); //Mostra na primeira linha da tela qual a posição do jogador
+
+  //Verifica se caso a posição do jogador seja uma casa de texturas
+  if (casaTextura(posJogador[jogador])) { //Caso seja
+
+    printCentered("Feche os olhos e", 1); //Mensagem na primeira linha
+    printCentered("adivinhe a TEXTURA!", 2); //Mensagem na segunda linha
+
+  } else { //Caso não seja
+
+    idx = posJogador[jogador] - 1; //Tem que diminuir por 1 já que a lista começa no 0
+
+    //Verifica se o idx esta dentro do limite das casas
+    if (idx >= 0 && idx <= 28) {
+
+      //Verifica se esta recebendo dados do computador
+      if (Serial.available() > 0) { 
+
+        desafio = Serial.readString(); //Recebe do computador o desafio
+
+        //Verifica se o desafio tem mais de 20 caracteres
         if (desafio.length() > 20) {
-          if(desafio.length() > 40) {
-            desafioContinuacaoContinuacao = desafio.substring(40, 60);
-            printCentered(desafioContinuacaoContinuacao, 3);
+
+          desafioContinuacao = desafio.substring(20, 40); //Recebe do caracter 20 até o 40 do desafio
+
+          //Verifica se o desafio tem mais de 40 caracteres
+          if (desafio.length() > 40) {
+
+            desafioContinuacaoContinuacao = desafio.substring(40, 60); //Recebe do caracter 20 até o 40 do desafio
+            printCentered(desafioContinuacaoContinuacao, 3); //Faz aparecer essa parte do desafio na quarta linha
+
           }
-          desafioContinuacao = desafio.substring(20, 40);
-          desafio = desafio.substring(0, 20);
-          printCentered(desafioContinuacao, 2);
+
+          desafio = desafio.substring(0, 20); //Recebe do caracter 0 até o 20 do desafio 
+          printCentered(desafioContinuacao, 2); //Faz aparecer essa parte do desafio na terceira linha
+
         }
-        printCentered(desafio, 1);
+
+        printCentered(desafio, 1); //Faz aparecer essa parte do desafio na segunda linha
 
       }
     }
   }
 
-  mostrarLedJogador(jogador);
+  mostrarLedJogador(jogador); //Chama a função de mostrar os leds do jogador
+
 }
 
+//Função de recomeçar o jogo
 void resetGame() {
+
+  //Retorna as posições dos jogadores para as iniciais  
   for (int i = 0; i < 4; i++) {
-    posJogador[i] = 0;
+
+    posJogador[i] = 0; //Tornando as posiões como 0
+
   }
+
+  //Retorna todas as variáveis para como elas eram no começo do código
   vezJogador = 0;
   esperandoProximoJogador = false;
   jogoEncerrado = false;
+  efeitoRGBAtivo = false;
+
+  //Limpa a tela e repete a mensagem pedindo para o jogador 1 apertar o botão
   lcd1.clear();
   printCentered("Jogador 1 vez!", 0);
   printCentered("Aperte botao!", 1);
-  YagamyLight.clear();
-  YagamyLight.show();
-  mostrarLedJogador(vezJogador);
+
+  //Apaga os leds e os acendem
+  leds.clear();
+  leds.show();
+
+  mostrarLedJogador(vezJogador); //Faz as leds brilharem na cor do jogador 1
+
 }
 
+//Loop principal do tabuleiro
 void loop() {
-  for (int i = 0; i < 4; i++) {
-    bool leitura = digitalRead(botoes[i]);
 
-    if (leitura != ultimoEstado[i]) {
-      ultimoTempoDebounce[i] = millis();
+    bool leituraBotao1; //Serve na hora da seleção de quantos jogadores irão jogar para verificar se o botão 1 foi pressionado ou não
+    bool leituraBotao2; //Serve na hora da seleção de quantos jogadores irão jogar para verificar se o botão 2 foi pressionado ou não
+    bool leitura; //lê quantos botões irão funcionar
+
+  //Verifica se ainda está sendo escolhido quantos jogadores irão jogar  
+  if (selecionandoJogadores) {
+
+    static int tempNumJogadores = 2; //Variável feita para definir o número de jogadores
+
+    leituraBotao1 = digitalRead(botoes[0]); //Lê o botão do primeiro jogador
+    leituraBotao2 = digitalRead(botoes[1]); //Lê o botão do segundo jogador
+
+    //Caso o botão não seja apartado o "ultimoTempoDebounce" salva seu tempo
+    if (leituraBotao1 != ultimoEstado[0]) {
+
+      ultimoTempoDebounce[0] = millis();
+
+    }
+    //Verifica se o botão está sendo apertado ao calcular se tempo atual menos o "ultimoTempoDebounce" é maior que o "DEBOUNCE_DELAY"
+    if ((millis() - ultimoTempoDebounce[0]) > DEBOUNCE_DELAY) {
+
+      //Verifica se o botão foi pressionado e evitando double click
+      if (leituraBotao1 != estadoAtual[0]) {
+
+        estadoAtual[0] = leituraBotao1; //Estado atual do botão vira o botão pressionado e evitando double click
+
+        //Verifica se o botão foi pressionado
+        if (estadoAtual[0] == LOW) {
+
+          tempNumJogadores = (tempNumJogadores % 3) + 2; //Roda entre 2, 3, 4 jogadores
+
+          lcd1.clear(); //Limpa a tela
+          printCentered("Num Jogadores: " + String(tempNumJogadores), 0); //Mostra a mensagem de quantos jogadores irão jogar na primeira linha
+          printCentered("Botao 1: Muda", 1); //Mostra na tela que o botão 1 muda quantos jogadores podem jogar
+          printCentered("Botao 2: Confirma", 2); //Mostra na tela que o botão 2 confirma quantos jogadores irão jogar
+
+        }
+      }
     }
 
-    if ((millis() - ultimoTempoDebounce[i]) > DEBOUNCE_DELAY) {
-      if (leitura != estadoAtual[i]) {
-        estadoAtual[i] = leitura;
+    ultimoEstado[0] = leituraBotao1; //Define a o ultimo estado do botão 1
 
+    // Verifica mudança no estado do botão 2
+    if (leituraBotao2 != ultimoEstado[1]) {
+
+      ultimoTempoDebounce[1] = millis(); //Verifica quando foi essa ultima mudança de estado
+
+      //verifica se o botão está sendo pressionado
+      if (leituraBotao2 == LOW) {
+
+        tempoPressionado = millis(); //Salva o tempo que o botão foi pressionado
+
+      }
+
+    }
+
+    //Verificando se o botão está sendo pressionado por 2 ou mais segundos
+    if (leituraBotao2 == LOW && (millis() - tempoPressionado) >= LONG_PRESS_DELAY) {
+
+      numJogadores = tempNumJogadores; //numero de jogadores é confirmado
+
+      selecionandoJogadores = false; //Sai da verificação do número de jogadores
+
+      lcd1.clear(); //Limpa a tela
+      printCentered("Jogador 1 vez!", 0); //Mostra q mensagem na primeira linha
+      printCentered("Aperte botao!", 1); //Mostra q mensagem na primeira linha
+      mostrarLedJogador(vezJogador); //Chama a função de mostrar a led
+
+    }
+
+    ultimoEstado[1] = leituraBotao2; //Salva o último estado do botão 2
+
+    return; //Para a função
+
+  }
+
+  //Verifica se deve ligar ou não o efeito RGB
+  if (efeitoRGBAtivo && esperandoProximoJogador && !jogoEncerrado) {
+
+    efeitoRGBOndulatorio();
+
+  }
+
+  //Liga os botões equivalente ao número de jogadores
+  for (int i = 0; i < numJogadores; i++) {
+
+    leitura = digitalRead(botoes[i]); //leitura se torna a variável que lê quais botões irão funcionar
+
+    // Verifica mudança no estado do botão
+    if (leitura != ultimoEstado[i]) {
+
+      ultimoTempoDebounce[i] = millis(); //Salva quando foi feita essa mudança de estado
+
+    }
+
+    //Verifica se o tempo de debounce foi atingido
+    if ((millis() - ultimoTempoDebounce[i]) > DEBOUNCE_DELAY) {
+
+      //Verifica se o estado atual mudou
+      if (leitura != estadoAtual[i]) {
+
+        estadoAtual[i] = leitura; //Atualiza o estado atual
+
+        //Verifica se o botão foi apertado
         if (estadoAtual[i] == LOW) {
+
+          //Caso o jogo foi encerrado e o botão 1 foi apertado ele reseta o jogo
           if (jogoEncerrado && i == 0) {
+
             resetGame();
+
+            //Caso o jogo não tenha sido encerrado
           } else if (!jogoEncerrado) {
+
+            //Verifica se o jogador certo apertou para jogar o dado
             if (i == vezJogador && !esperandoProximoJogador) {
-              jogarDado(i);
-              esperandoProximoJogador = true;
-            } else if (esperandoProximoJogador && i == (vezJogador + 1) % 4) {
-              vezJogador = (vezJogador + 1) % 4;
-              esperandoProximoJogador = false;
-              lcd1.clear();
-              printCentered(String("Jogador ") + String(vezJogador + 1) + " vez!", 0);
-              printCentered("Aperte botao!", 1);
-              mostrarLedJogador(vezJogador);
+
+              lcd1.clear(); //Limpa a tela para evitar erros no buffer
+              jogarDado(i); //Joga o dado na ver do jogador certo
+
+              esperandoProximoJogador = true; //Define que o jogo está esperando o próximo jogador
+
+              //Verifica se o jogo está esperando o próximo jogador e se o jogador certo apertou o botão
+            } else if (esperandoProximoJogador && i == (vezJogador + 1) % numJogadores) {
+
+              vezJogador = (vezJogador + 1) % numJogadores; //"vezJogador" cilcla entre 0,1,2,3
+
+              esperandoProximoJogador = false; //jogador vai para parte que tem que apertar o botão
+
+              //efeitoRGBAtivo = false; //desativa efeito RGB // teste
+
+              lcd1.clear(); //Limpa a tela 
+              printCentered(String("Jogador ") + String(vezJogador + 1) + " vez!", 0); //Faz aparecer na tela na primeira linha
+              printCentered("Aperte botao!", 1); //Faz aparecer na tela na primeira linha
+
+              mostrarLedJogador(vezJogador); //Mostra a led do jogador
+
             }
           }
         }
       }
     }
 
-    ultimoEstado[i] = leitura;
+    ultimoEstado[i] = leitura; //Atualiza o estado anterior do botão
+
   }
 }
