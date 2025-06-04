@@ -28,7 +28,7 @@ desafios = ["Pense em uma emocao e explique o que ela representa",
 "Escolha um objeto   ao seu redor e diga para que ele serve",
 "Diga 3 frutas",
 "",
-""]
+"Danca maluca"]
 
 
 with serial.Serial('COM7', 9600) as ser:
